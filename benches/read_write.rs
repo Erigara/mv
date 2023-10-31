@@ -73,18 +73,20 @@ fn iter_btree_concurrent(c: &mut Criterion) {
         btree_group.bench_function(BenchmarkId::from_parameter(threads), |b| {
             b.iter(|| {
                 let btree = black_box(btree.clone());
-                let handles = (0..threads).map(|_|{
-                    let btree = std::sync::Arc::clone(&btree);
-                    std::thread::spawn(move || {
-                        let mut i = 0;
-                        while i < 10 {
-                            let view = btree.read().unwrap();
-                            for (_, value) in view.iter() {
-                                i = *value;
+                let handles = (0..threads)
+                    .map(|_| {
+                        let btree = std::sync::Arc::clone(&btree);
+                        std::thread::spawn(move || {
+                            let mut i = 0;
+                            while i < 10 {
+                                let view = btree.read().unwrap();
+                                for (_, value) in view.iter() {
+                                    i = *value;
+                                }
                             }
-                        }
+                        })
                     })
-                }).collect::<Vec<_>>();
+                    .collect::<Vec<_>>();
 
                 for v in 1..=10 {
                     let mut btree = btree.write().unwrap();
@@ -163,18 +165,20 @@ fn iter_storage_concurrent(c: &mut Criterion) {
         storage_group.bench_function(BenchmarkId::from_parameter(threads), |b| {
             b.iter(|| {
                 let storage = black_box(storage.clone());
-                let handles = (0..threads).map(|_|{
-                    let storage = std::sync::Arc::clone(&storage);
-                    std::thread::spawn(move || {
-                        let mut i = 0;
-                        while i < 10 {
-                            let view = storage.view();
-                            for (_, value) in view.iter() {
-                                i = *value;
+                let handles = (0..threads)
+                    .map(|_| {
+                        let storage = std::sync::Arc::clone(&storage);
+                        std::thread::spawn(move || {
+                            let mut i = 0;
+                            while i < 10 {
+                                let view = storage.view();
+                                for (_, value) in view.iter() {
+                                    i = *value;
+                                }
                             }
-                        }
+                        })
                     })
-                }).collect::<Vec<_>>();
+                    .collect::<Vec<_>>();
 
                 for v in 1..=10 {
                     let mut block = storage.block(false);
