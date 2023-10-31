@@ -125,6 +125,16 @@ mod block {
             self.rollback.commit();
         }
 
+        /// Get mutable access to the value stored in
+        pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+            self.blocks.get_mut(key).map(|value| {
+                self.rollback
+                    .entry(key.clone())
+                    .or_insert_with(|| Some(value.clone()));
+                value
+            })
+        }
+
         /// Insert key value into the storage
         pub fn insert(&mut self, key: K, value: V) {
             let prev_value = self.blocks.insert(key.clone(), value);
@@ -174,6 +184,15 @@ mod block {
             for (key, value) in core::mem::take(&mut self.rollback) {
                 self.block.rollback.entry(key).or_insert(value);
             }
+        }
+        /// Get mutable access to the value stored in
+        pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+            self.block.blocks.get_mut(key).map(|value| {
+                self.rollback
+                    .entry(key.clone())
+                    .or_insert_with(|| Some(value.clone()));
+                value
+            })
         }
 
         /// Insert key value into the transaction temporary map
