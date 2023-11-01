@@ -42,6 +42,12 @@ impl<V: Value> Cell<V> {
     }
 }
 
+impl<V: Value + Default> Default for Cell<V> {
+    fn default() -> Self {
+        Self::new(V::default())
+    }
+}
+
 /// Module for [`View`] and it's related impls
 mod view {
     use std::ops::Deref;
