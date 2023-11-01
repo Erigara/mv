@@ -9,7 +9,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 
-use crate::{Key, Storage, Value};
+use crate::{storage::Storage, Key, Value};
 
 /// Struct to deserialize [`Storage`] with provided seed for keys and values
 /// In case seed is only required for keys or values use [`PhantomData`] in place where seed is not required.
