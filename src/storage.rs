@@ -57,6 +57,15 @@ impl<K: Key, V: Value> Default for Storage<K, V> {
     }
 }
 
+impl<K: Key, V: Value> FromIterator<(K, V)> for Storage<K, V> {
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+        Self {
+            rollback: EbrCell::new(BTreeMap::new()),
+            blocks: iter.into_iter().collect(),
+        }
+    }
+}
+
 /// Module for [`View`] and it's related impls
 mod view {
     use super::*;
