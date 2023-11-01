@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
+
 [[bench]]
 name = "rollback"
 harness = false
@@ -15,7 +19,9 @@ harness = false
 
 [dependencies]
 concread = { git = "https://github.com/kanidm/concread.git", branch="master" , features = ["ebr", "maps"]}
+serde = { version = "~1.0", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 proptest = "1.0.0"
 criterion = { version = "0.5.1", features = ["html_reports"] }
+serde_json = "1.0.107"

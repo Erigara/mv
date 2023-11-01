@@ -5,6 +5,9 @@ use concread::{
     ebrcell::{EbrCell, EbrCellWriteTxn},
 };
 
+#[cfg(feature = "serde")]
+pub mod serde;
+
 pub trait Key: Clone + Ord + Debug + Send + Sync + 'static {}
 pub trait Value: Clone + Send + Sync + 'static {}
 
