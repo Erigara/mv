@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 
+pub mod cell;
 #[cfg(feature = "serde")]
 pub mod serde;
 pub mod storage;
