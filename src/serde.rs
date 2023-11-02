@@ -22,8 +22,8 @@ mod storage {
     /// Struct to deserialize [`Storage`] with provided seed for keys and values
     /// In case seed is only required for keys or values use [`PhantomData`] in place where seed is not required.
     pub struct StorageSeeded<KS, VS> {
-        kseed: KS,
-        vseed: VS,
+        pub kseed: KS,
+        pub vseed: VS,
     }
 
     impl<K: Serialize + Key, V: Serialize + Value> Serialize for Storage<K, V> {
@@ -348,7 +348,7 @@ mod cell {
     /// Struct to deserialize [`Storage`] with provided seed for keys and values
     /// In case seed is only required for keys or values use [`PhantomData`] in place where seed is not required.
     pub struct CellSeeded<S> {
-        seed: S,
+        pub seed: S,
     }
 
     impl<V: Serialize + Value> Serialize for Cell<V> {
