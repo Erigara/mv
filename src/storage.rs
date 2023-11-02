@@ -155,15 +155,17 @@ mod block {
         }
 
         /// Insert key value into the storage
-        pub fn insert(&mut self, key: K, value: V) {
+        pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             let prev_value = self.blocks.insert(key.clone(), value);
-            self.rollback.entry(key).or_insert(prev_value);
+            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            prev_value
         }
 
         /// Remove key value from storage
-        pub fn remove(&mut self, key: K) {
+        pub fn remove(&mut self, key: K) -> Option<V> {
             let prev_value = self.blocks.remove(&key);
-            self.rollback.entry(key).or_insert(prev_value);
+            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            prev_value
         }
 
         /// Read entry from the storage up to certain version non-inclusive
@@ -223,15 +225,17 @@ mod block {
         }
 
         /// Insert key value into the transaction temporary map
-        pub fn insert(&mut self, key: K, value: V) {
+        pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             let prev_value = self.block.blocks.insert(key.clone(), value);
-            self.rollback.entry(key).or_insert(prev_value);
+            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            prev_value
         }
 
         /// Remove key value from storage
-        pub fn remove(&mut self, key: K) {
+        pub fn remove(&mut self, key: K) -> Option<V> {
             let prev_value = self.block.blocks.remove(&key);
-            self.rollback.entry(key).or_insert(prev_value);
+            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            prev_value
         }
 
         /// Read entry from the storage up to certain version non-inclusive
