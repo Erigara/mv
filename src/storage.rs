@@ -93,7 +93,7 @@ mod view {
         pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> impl Iterator<Item = (&K, &V)>
         where
             K: Borrow<Q>,
-            Q: Ord,
+            Q: Ord + ?Sized,
         {
             self.blocks.range(bounds)
         }
@@ -170,7 +170,7 @@ mod block {
         pub fn range<Q, R>(&self, bounds: R) -> impl Iterator<Item = (&K, &V)>
         where
             K: Borrow<Q>,
-            Q: Ord,
+            Q: Ord + ?Sized,
             R: RangeBounds<Q>,
         {
             self.blocks.range(bounds)
@@ -230,7 +230,7 @@ mod block {
         pub fn range<Q, R>(&self, bounds: R) -> impl Iterator<Item = (&K, &V)>
         where
             K: Borrow<Q>,
-            Q: Ord,
+            Q: Ord + ?Sized,
             R: RangeBounds<Q>,
         {
             self.block.range(bounds)
