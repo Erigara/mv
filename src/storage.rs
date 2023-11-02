@@ -75,6 +75,13 @@ mod view {
     }
 
     impl<K: Key, V: Value> View<'_, K, V> {
+        /// Convert [`Self`] to [`Snapshot`] type
+        pub fn to_snapshot(&self) -> Snapshot<'_, K, V> {
+            Snapshot {
+                blocks: self.blocks.to_snapshot(),
+            }
+        }
+
         /// Read entry from the list up to certain version non-inclusive
         pub fn get<'slf, Q>(&'slf self, key: &'slf Q) -> Option<&'slf V>
         where
@@ -128,6 +135,13 @@ mod block {
             // Commit fields in the inverse order
             self.blocks.commit();
             self.rollback.commit();
+        }
+
+        /// Convert [`Self`] to [`Snapshot`] type
+        pub fn to_snapshot(&self) -> Snapshot<'_, K, V> {
+            Snapshot {
+                blocks: self.blocks.to_snapshot(),
+            }
         }
 
         /// Get mutable access to the value stored in
@@ -190,6 +204,14 @@ mod block {
                 self.block.rollback.entry(key).or_insert(value);
             }
         }
+
+        /// Convert [`Self`] to [`Snapshot`] type
+        pub fn to_snapshot(&self) -> Snapshot<'_, K, V> {
+            Snapshot {
+                blocks: self.block.blocks.to_snapshot(),
+            }
+        }
+
         /// Get mutable access to the value stored in
         pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
             self.block.blocks.get_mut(key).map(|value| {
@@ -251,6 +273,44 @@ mod block {
     }
 }
 pub use block::{Block, Transaction};
+
+/// Used in cases where [`Block`], [`View`] and [`Transaction`] need to be converted to single type for read-only operations
+mod snapshot {
+    use concread::bptree::BptreeMapReadSnapshot;
+
+    use super::*;
+    /// Consistent view of the storage at the certain version
+    /// Used in cases where [`Block`], [`View`] and [`Transaction`] need to be converted to single type for read-only operations
+    pub struct Snapshot<'storage, K: Key, V: Value> {
+        pub(crate) blocks: BptreeMapReadSnapshot<'storage, K, V>,
+    }
+
+    impl<K: Key, V: Value> Snapshot<'_, K, V> {
+        /// Read entry from the list up to certain version non-inclusive
+        pub fn get<'slf, Q>(&'slf self, key: &'slf Q) -> Option<&'slf V>
+        where
+            K: Ord + Borrow<Q>,
+            Q: Ord + ?Sized,
+        {
+            self.blocks.get(key)
+        }
+
+        /// Iterate over all entries in the storage at the certain version non-inclusive
+        pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+            self.blocks.iter()
+        }
+
+        /// Iterate over all entries in the storage at the certain version non-inclusive
+        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> impl Iterator<Item = (&K, &V)>
+        where
+            K: Borrow<Q>,
+            Q: Ord + ?Sized,
+        {
+            self.blocks.range(bounds)
+        }
+    }
+}
+pub use snapshot::Snapshot;
 
 #[cfg(test)]
 mod tests {
