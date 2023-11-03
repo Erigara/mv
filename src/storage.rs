@@ -83,7 +83,7 @@ mod view {
         }
 
         /// Read entry from the list up to certain version non-inclusive
-        pub fn get<'slf, Q>(&'slf self, key: &'slf Q) -> Option<&'slf V>
+        pub fn get<Q>(&self, key: &Q) -> Option<&V>
         where
             K: Ord + Borrow<Q>,
             Q: Ord + ?Sized,
@@ -314,7 +314,7 @@ mod snapshot {
 
     impl<K: Key, V: Value> Snapshot<'_, K, V> {
         /// Read entry from the list up to certain version non-inclusive
-        pub fn get<'slf, Q>(&'slf self, key: &'slf Q) -> Option<&'slf V>
+        pub fn get<Q>(&self, key: &Q) -> Option<&V>
         where
             K: Ord + Borrow<Q>,
             Q: Ord + ?Sized,
