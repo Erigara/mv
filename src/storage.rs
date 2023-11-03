@@ -104,6 +104,11 @@ mod view {
         {
             self.blocks.range(bounds)
         }
+
+        /// Get amount of entries in the storage
+        pub fn len(&self) -> usize {
+            self.blocks.len()
+        }
     }
 }
 pub use view::View;
@@ -157,14 +162,18 @@ mod block {
         /// Insert key value into the storage
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             let prev_value = self.blocks.insert(key.clone(), value);
-            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            self.rollback
+                .entry(key)
+                .or_insert_with(|| prev_value.clone());
             prev_value
         }
 
         /// Remove key value from storage
         pub fn remove(&mut self, key: K) -> Option<V> {
             let prev_value = self.blocks.remove(&key);
-            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            self.rollback
+                .entry(key)
+                .or_insert_with(|| prev_value.clone());
             prev_value
         }
 
@@ -190,6 +199,11 @@ mod block {
             R: RangeBounds<Q>,
         {
             self.blocks.range(bounds)
+        }
+
+        /// Get amount of entries in the storage
+        pub fn len(&self) -> usize {
+            self.blocks.len()
         }
     }
 
@@ -227,14 +241,18 @@ mod block {
         /// Insert key value into the transaction temporary map
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             let prev_value = self.block.blocks.insert(key.clone(), value);
-            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            self.rollback
+                .entry(key)
+                .or_insert_with(|| prev_value.clone());
             prev_value
         }
 
         /// Remove key value from storage
         pub fn remove(&mut self, key: K) -> Option<V> {
             let prev_value = self.block.blocks.remove(&key);
-            self.rollback.entry(key).or_insert_with(|| prev_value.clone());
+            self.rollback
+                .entry(key)
+                .or_insert_with(|| prev_value.clone());
             prev_value
         }
 
@@ -260,6 +278,11 @@ mod block {
             R: RangeBounds<Q>,
         {
             self.block.range(bounds)
+        }
+
+        /// Get amount of entries in the storage
+        pub fn len(&self) -> usize {
+            self.block.len()
         }
     }
 
@@ -311,6 +334,11 @@ mod snapshot {
             Q: Ord + ?Sized,
         {
             self.blocks.range(bounds)
+        }
+
+        /// Get amount of entries in the storage
+        pub fn len(&self) -> usize {
+            self.blocks.len()
         }
     }
 }
@@ -598,6 +626,38 @@ mod tests {
         assert_eq!(view1.get(&0), Some(&1));
         // Revert is visible in the view created after revert was applied
         assert_eq!(view2.get(&0), Some(&0));
+    }
+
+    #[test]
+    fn len() {
+        let storage = Storage::<u64, u64>::new();
+
+        {
+            let mut block = storage.block(false);
+            for (key, value) in [(0, 0), (1, 0), (2, 0)] {
+                block.insert(key, value);
+            }
+            block.commit()
+        }
+
+        {
+            let mut block = storage.block(false);
+            for (key, value) in [(0, 1), (1, 1), (3, 1)] {
+                block.insert(key, value);
+            }
+            block.commit()
+        }
+
+        {
+            let mut block = storage.block(false);
+            for (key, value) in [(1, 2), (4, 2)] {
+                block.insert(key, value);
+            }
+            block.commit()
+        }
+
+        let view = storage.view();
+        assert_eq!(view.len(), 5);
     }
 
     proptest! {
