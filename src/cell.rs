@@ -81,7 +81,7 @@ pub use view::View;
 
 /// Module for [`Block`] and it's related impls
 mod block {
-    use std::ops::Deref;
+    use std::ops::{Deref, DerefMut};
 
     use concread::ebrcell::EbrCellWriteTxn;
 
@@ -133,6 +133,12 @@ mod block {
         }
     }
 
+    impl<V: Value> DerefMut for Block<'_, V> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self.get_mut()
+        }
+    }
+
     /// Part of block's aggregated changes which applied or aborted at the same time
     pub struct Transaction<'block, 'storage, V: Value> {
         pub(crate) rollback: Option<V>,
@@ -175,6 +181,12 @@ mod block {
 
         fn deref(&self) -> &Self::Target {
             self.get()
+        }
+    }
+
+    impl<V: Value> DerefMut for Transaction<'_, '_, V> {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self.get_mut()
         }
     }
 }
