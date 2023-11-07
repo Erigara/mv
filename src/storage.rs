@@ -92,17 +92,21 @@ mod view {
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-            self.blocks.iter()
+        pub fn iter(&self) -> Iter<'_, K, V> {
+            Iter {
+                iter: self.blocks.iter(),
+            }
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> impl Iterator<Item = (&K, &V)>
+        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
         {
-            self.blocks.range(bounds)
+            RangeIter {
+                iter: self.blocks.range(bounds),
+            }
         }
 
         /// Get amount of entries in the storage
@@ -187,18 +191,22 @@ mod block {
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-            self.blocks.iter()
+        pub fn iter(&self) -> Iter<'_, K, V> {
+            Iter {
+                iter: self.blocks.iter(),
+            }
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q, R>(&self, bounds: R) -> impl Iterator<Item = (&K, &V)>
+        pub fn range<Q, R>(&self, bounds: R) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
             R: RangeBounds<Q>,
         {
-            self.blocks.range(bounds)
+            RangeIter {
+                iter: self.blocks.range(bounds),
+            }
         }
 
         /// Get amount of entries in the storage
@@ -266,12 +274,12 @@ mod block {
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        pub fn iter(&self) -> Iter<'_, K, V> {
             self.block.iter()
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q, R>(&self, bounds: R) -> impl Iterator<Item = (&K, &V)>
+        pub fn range<Q, R>(&self, bounds: R) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
@@ -323,17 +331,21 @@ mod snapshot {
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-            self.blocks.iter()
+        pub fn iter(&self) -> Iter<'_, K, V> {
+            Iter {
+                iter: self.blocks.iter(),
+            }
         }
 
         /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> impl Iterator<Item = (&K, &V)>
+        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
         {
-            self.blocks.range(bounds)
+            RangeIter {
+                iter: self.blocks.range(bounds),
+            }
         }
 
         /// Get amount of entries in the storage
@@ -343,6 +355,37 @@ mod snapshot {
     }
 }
 pub use snapshot::Snapshot;
+
+mod iter {
+    use super::*;
+
+    /// Iterate over entries in block, view or transaction
+    pub struct Iter<'store, K: Key, V: Value> {
+        pub(crate) iter: concread::internals::bptree::iter::Iter<'store, K, V>,
+    }
+
+    /// Iterate over range of entries in block, view or transaction
+    pub struct RangeIter<'store, K: Key, V: Value> {
+        pub(crate) iter: concread::internals::bptree::iter::RangeIter<'store, K, V>,
+    }
+
+    impl<'store, K: Key, V: Value> Iterator for Iter<'store, K, V> {
+        type Item = (&'store K, &'store V);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iter.next()
+        }
+    }
+
+    impl<'store, K: Key, V: Value> Iterator for RangeIter<'store, K, V> {
+        type Item = (&'store K, &'store V);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iter.next()
+        }
+    }
+}
+pub use iter::{Iter, RangeIter};
 
 #[cfg(test)]
 mod tests {

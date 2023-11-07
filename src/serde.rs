@@ -11,8 +11,7 @@ use serde::{
 
 use crate::{Key, Value};
 
-pub use cell::CellSeeded;
-pub use storage::StorageSeeded;
+pub use self::{cell::CellSeeded, storage::StorageSeeded};
 
 mod storage {
     use crate::storage::Storage;
