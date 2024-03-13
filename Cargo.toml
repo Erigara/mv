@@ -18,7 +18,7 @@ name = "read_write"
 harness = false
 
 [dependencies]
-concread = { git = "https://github.com/kanidm/concread.git", branch="master" , features = ["ebr", "maps"]}
+concread = { version = "0.4", features = ["ebr", "maps"]}
 serde = { version = "~1.0", optional = true, features = ["derive"] }
 
 [dev-dependencies]
