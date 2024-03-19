@@ -66,6 +66,26 @@ impl<K: Key, V: Value> FromIterator<(K, V)> for Storage<K, V> {
     }
 }
 
+pub trait StorageReadOnly<K: Key, V: Value> {
+    /// Read entry from the storage
+    fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: Ord + Borrow<Q>,
+        Q: Ord + ?Sized;
+
+    /// Iterate over all entries in the storage
+    fn iter(&self) -> Iter<'_, K, V>;
+
+    /// Iterate over range of entries in the storage
+    fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized;
+
+    /// Get amount of entries in the storage
+    fn len(&self) -> usize;
+}
+
 /// Module for [`View`] and it's related impls
 mod view {
     use super::*;
@@ -74,16 +94,8 @@ mod view {
         pub(crate) blocks: BptreeMapReadTxn<'storage, K, V>,
     }
 
-    impl<K: Key, V: Value> View<'_, K, V> {
-        /// Convert [`Self`] to [`Snapshot`] type
-        pub fn to_snapshot(&self) -> Snapshot<'_, K, V> {
-            Snapshot {
-                blocks: self.blocks.to_snapshot(),
-            }
-        }
-
-        /// Read entry from the list up to certain version non-inclusive
-        pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    impl<K: Key, V: Value> StorageReadOnly<K, V> for View<'_, K, V> {
+        fn get<Q>(&self, key: &Q) -> Option<&V>
         where
             K: Ord + Borrow<Q>,
             Q: Ord + ?Sized,
@@ -91,15 +103,13 @@ mod view {
             self.blocks.get(key)
         }
 
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> Iter<'_, '_, K, V> {
+        fn iter(&self) -> Iter<'_, K, V> {
             Iter {
                 iter: self.blocks.iter(),
             }
         }
 
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, '_, K, V>
+        fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
@@ -110,7 +120,7 @@ mod view {
         }
 
         /// Get amount of entries in the storage
-        pub fn len(&self) -> usize {
+        fn len(&self) -> usize {
             self.blocks.len()
         }
     }
@@ -146,13 +156,6 @@ mod block {
             self.rollback.commit();
         }
 
-        /// Convert [`Self`] to [`Snapshot`] type
-        pub fn to_snapshot(&self) -> Snapshot<'_, K, V> {
-            Snapshot {
-                blocks: self.blocks.to_snapshot(),
-            }
-        }
-
         /// Get mutable access to the value stored in
         pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
             self.blocks.get_mut(key).map(|value| {
@@ -180,9 +183,10 @@ mod block {
                 .or_insert_with(|| prev_value.clone());
             prev_value
         }
+    }
 
-        /// Read entry from the storage up to certain version non-inclusive
-        pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    impl<K: Key, V: Value> StorageReadOnly<K, V> for Block<'_, K, V> {
+        fn get<Q>(&self, key: &Q) -> Option<&V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
@@ -190,27 +194,23 @@ mod block {
             self.blocks.get(key)
         }
 
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> Iter<'_, '_, K, V> {
+        fn iter(&self) -> Iter<'_, K, V> {
             Iter {
                 iter: self.blocks.iter(),
             }
         }
 
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q, R>(&self, bounds: R) -> RangeIter<'_, '_, K, V>
+        fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
-            R: RangeBounds<Q>,
         {
             RangeIter {
                 iter: self.blocks.range(bounds),
             }
         }
 
-        /// Get amount of entries in the storage
-        pub fn len(&self) -> usize {
+        fn len(&self) -> usize {
             self.blocks.len()
         }
     }
@@ -226,13 +226,6 @@ mod block {
         pub fn apply(mut self) {
             for (key, value) in core::mem::take(&mut self.rollback) {
                 self.block.rollback.entry(key).or_insert(value);
-            }
-        }
-
-        /// Convert [`Self`] to [`Snapshot`] type
-        pub fn to_snapshot(&self) -> Snapshot<'_, K, V> {
-            Snapshot {
-                blocks: self.block.blocks.to_snapshot(),
             }
         }
 
@@ -263,9 +256,10 @@ mod block {
                 .or_insert_with(|| prev_value.clone());
             prev_value
         }
+    }
 
-        /// Read entry from the storage up to certain version non-inclusive
-        pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    impl<K: Key, V: Value> StorageReadOnly<K, V> for Transaction<'_, '_, K, V> {
+        fn get<Q>(&self, key: &Q) -> Option<&V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
@@ -273,23 +267,19 @@ mod block {
             self.block.get(key)
         }
 
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> Iter<'_, '_, K, V> {
+        fn iter(&self) -> Iter<'_, K, V> {
             self.block.iter()
         }
 
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q, R>(&self, bounds: R) -> RangeIter<'_, '_, K, V>
+        fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, K, V>
         where
             K: Borrow<Q>,
             Q: Ord + ?Sized,
-            R: RangeBounds<Q>,
         {
             self.block.range(bounds)
         }
 
-        /// Get amount of entries in the storage
-        pub fn len(&self) -> usize {
+        fn len(&self) -> usize {
             self.block.len()
         }
     }
@@ -308,77 +298,29 @@ mod block {
     }
 }
 pub use block::{Block, Transaction};
-
-/// Used in cases where [`Block`], [`View`] and [`Transaction`] need to be converted to single type for read-only operations
-mod snapshot {
-    use concread::bptree::BptreeMapReadSnapshot;
-
-    use super::*;
-    /// Consistent view of the storage at the certain version
-    /// Used in cases where [`Block`], [`View`] and [`Transaction`] need to be converted to single type for read-only operations
-    pub struct Snapshot<'storage, K: Key, V: Value> {
-        pub(crate) blocks: BptreeMapReadSnapshot<'storage, K, V>,
-    }
-
-    impl<K: Key, V: Value> Snapshot<'_, K, V> {
-        /// Read entry from the list up to certain version non-inclusive
-        pub fn get<Q>(&self, key: &Q) -> Option<&V>
-        where
-            K: Ord + Borrow<Q>,
-            Q: Ord + ?Sized,
-        {
-            self.blocks.get(key)
-        }
-
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn iter(&self) -> Iter<'_, '_, K, V> {
-            Iter {
-                iter: self.blocks.iter(),
-            }
-        }
-
-        /// Iterate over all entries in the storage at the certain version non-inclusive
-        pub fn range<Q>(&self, bounds: impl RangeBounds<Q>) -> RangeIter<'_, '_, K, V>
-        where
-            K: Borrow<Q>,
-            Q: Ord + ?Sized,
-        {
-            RangeIter {
-                iter: self.blocks.range(bounds),
-            }
-        }
-
-        /// Get amount of entries in the storage
-        pub fn len(&self) -> usize {
-            self.blocks.len()
-        }
-    }
-}
-pub use snapshot::Snapshot;
-
 mod iter {
     use super::*;
 
     /// Iterate over entries in block, view or transaction
-    pub struct Iter<'slf, 'store, K: Key, V: Value> {
-        pub(crate) iter: concread::internals::bptree::iter::Iter<'slf, 'store, K, V>,
+    pub struct Iter<'slf, K: Key, V: Value> {
+        pub(crate) iter: concread::internals::bptree::iter::Iter<'slf, 'slf, K, V>,
     }
 
     /// Iterate over range of entries in block, view or transaction
-    pub struct RangeIter<'slf, 'store, K: Key, V: Value> {
-        pub(crate) iter: concread::internals::bptree::iter::RangeIter<'slf, 'store, K, V>,
+    pub struct RangeIter<'slf, K: Key, V: Value> {
+        pub(crate) iter: concread::internals::bptree::iter::RangeIter<'slf, 'slf, K, V>,
     }
 
-    impl<'store, K: Key, V: Value> Iterator for Iter<'_, 'store, K, V> {
-        type Item = (&'store K, &'store V);
+    impl<'slf, K: Key, V: Value> Iterator for Iter<'slf, K, V> {
+        type Item = (&'slf K, &'slf V);
 
         fn next(&mut self) -> Option<Self::Item> {
             self.iter.next()
         }
     }
 
-    impl<'store, K: Key, V: Value> Iterator for RangeIter<'_, 'store, K, V> {
-        type Item = (&'store K, &'store V);
+    impl<'slf, K: Key, V: Value> Iterator for RangeIter<'slf, K, V> {
+        type Item = (&'slf K, &'slf V);
 
         fn next(&mut self) -> Option<Self::Item> {
             self.iter.next()
