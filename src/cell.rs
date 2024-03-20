@@ -2,7 +2,9 @@ use crate::Value;
 
 /// Multi-version storage for single value
 pub struct Cell<V: Value> {
-    pub(crate) rollback: EbrCell<Option<V>>,
+    /// Previous version of value, required to perform revert of the latest changes
+    pub(crate) revert: EbrCell<Option<V>>,
+    /// Value which represent aggregated changes of multiple blocks
     pub(crate) blocks: EbrCell<V>,
 }
 
@@ -10,7 +12,7 @@ impl<V: Value> Cell<V> {
     /// Construct new [`Self`]
     pub fn new(v: V) -> Self {
         Self {
-            rollback: EbrCell::new(None),
+            revert: EbrCell::new(None),
             blocks: EbrCell::new(v),
         }
     }
@@ -24,21 +26,28 @@ impl<V: Value> Cell<V> {
     }
 
     /// Create block to aggregate updates
-    pub fn block(&self, rollback_latest_block: bool) -> Block<'_, V> {
-        let mut rollback = self.rollback.write();
+    pub fn block(&self) -> Block<'_, V> {
+        let mut revert = self.revert.write();
+        let blocks = self.blocks.write();
+
+        *revert.get_mut() = None;
+
+        Block { revert, blocks }
+    }
+
+    /// Create block to aggregate updates and revert changes made in latest block
+    pub fn block_and_revert(&self) -> Block<'_, V> {
+        let mut revert = self.revert.write();
         let mut blocks = self.blocks.write();
 
         {
-            let rollback = core::mem::take(rollback.get_mut());
-            // Revert changes in case of rollback
-            if rollback_latest_block {
-                if let Some(rollback) = rollback {
-                    *blocks.get_mut() = rollback;
-                }
+            let revert = core::mem::take(revert.get_mut());
+            if let Some(revert) = revert {
+                *blocks.get_mut() = revert;
             }
         }
 
-        Block { rollback, blocks }
+        Block { revert, blocks }
     }
 }
 
@@ -89,7 +98,7 @@ mod block {
 
     /// Batched update to the storage that can be reverted later
     pub struct Block<'storage, V: Value> {
-        pub(crate) rollback: EbrCellWriteTxn<'storage, Option<V>>,
+        pub(crate) revert: EbrCellWriteTxn<'storage, Option<V>>,
         pub(crate) blocks: EbrCellWriteTxn<'storage, V>,
     }
 
@@ -101,7 +110,7 @@ mod block {
         {
             Transaction {
                 block: self,
-                rollback: None,
+                revert: None,
             }
         }
 
@@ -109,13 +118,13 @@ mod block {
         pub fn commit(self) {
             // Commit fields in the inverse order
             self.blocks.commit();
-            self.rollback.commit();
+            self.revert.commit();
         }
 
         /// Get mutable access to the value stored in
         pub fn get_mut(&mut self) -> &mut V {
             let value = self.blocks.get_mut();
-            self.rollback.get_or_insert(value.clone());
+            self.revert.get_or_insert(value.clone());
             value
         }
 
@@ -141,22 +150,22 @@ mod block {
 
     /// Part of block's aggregated changes which applied or aborted at the same time
     pub struct Transaction<'block, 'storage, V: Value> {
-        pub(crate) rollback: Option<V>,
+        pub(crate) revert: Option<V>,
         pub(crate) block: &'block mut Block<'storage, V>,
     }
 
     impl<'block, 'storage: 'block, V: Value> Transaction<'block, 'storage, V> {
         /// Apply aggregated changes of [`Transaction`] to the [`Block`]
         pub fn apply(mut self) {
-            if let Some(prev_value) = core::mem::take(&mut self.rollback) {
-                self.block.rollback.get_or_insert(prev_value);
+            if let Some(prev_value) = core::mem::take(&mut self.revert) {
+                self.block.revert.get_or_insert(prev_value);
             }
         }
 
         /// Get mutable access to the value stored in cell
         pub fn get_mut(&mut self) -> &mut V {
             let value = self.block.blocks.get_mut();
-            self.rollback.get_or_insert(value.clone());
+            self.revert.get_or_insert(value.clone());
             value
         }
 
@@ -170,7 +179,7 @@ mod block {
         fn drop(&mut self) {
             // revert changes made so fur by current transaction
             // if transaction was applied set would be empty
-            if let Some(prev_value) = core::mem::take(&mut self.rollback) {
+            if let Some(prev_value) = core::mem::take(&mut self.revert) {
                 *self.block.blocks.get_mut() = prev_value;
             }
         }
@@ -203,7 +212,7 @@ mod tests {
         let view0 = cell.view();
 
         {
-            let mut block = cell.block(false);
+            let mut block = cell.block();
             *block.get_mut() = 1;
             block.commit()
         }
@@ -211,7 +220,7 @@ mod tests {
         let view1 = cell.view();
 
         {
-            let mut block = cell.block(false);
+            let mut block = cell.block();
             *block.get_mut() = 2;
             block.commit()
         }
@@ -219,7 +228,7 @@ mod tests {
         let view2 = cell.view();
 
         {
-            let mut block = cell.block(false);
+            let mut block = cell.block();
             *block.get_mut() = 3;
             block.commit()
         }
@@ -236,7 +245,7 @@ mod tests {
     fn transaction_step() {
         let cell = Cell::new(0_u64);
 
-        let mut block = cell.block(false);
+        let mut block = cell.block();
 
         // Successful transaction
         {
@@ -267,17 +276,17 @@ mod tests {
     }
 
     #[test]
-    fn rollback() {
+    fn revert() {
         let cell = Cell::new(0_u64);
 
         {
-            let mut block = cell.block(false);
+            let mut block = cell.block();
             *block.get_mut() = 1;
             block.commit()
         }
 
         {
-            let mut block = cell.block(false);
+            let mut block = cell.block();
             *block.get_mut() = 2;
             block.commit()
         }
@@ -285,7 +294,7 @@ mod tests {
         let view1 = cell.view();
 
         {
-            let block = cell.block(true);
+            let block = cell.block_and_revert();
             block.commit();
         }
         let view2 = cell.view();

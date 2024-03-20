@@ -9,7 +9,9 @@ use crate::{Key, Value};
 
 /// Multi-version key value storage
 pub struct Storage<K: Key, V: Value> {
-    pub(crate) rollback: EbrCell<BTreeMap<K, Option<V>>>,
+    /// Previous version of values in the `blocks` map, required to perform revert of the latest changes
+    pub(crate) revert: EbrCell<BTreeMap<K, Option<V>>>,
+    /// Map which represent aggregated changes of multiple blocks
     pub(crate) blocks: BptreeMap<K, V>,
 }
 
@@ -17,7 +19,7 @@ impl<K: Key, V: Value> Storage<K, V> {
     /// Construct new [`Self`]
     pub fn new() -> Self {
         Self {
-            rollback: EbrCell::new(BTreeMap::new()),
+            revert: EbrCell::new(BTreeMap::new()),
             blocks: BptreeMap::new(),
         }
     }
@@ -30,24 +32,32 @@ impl<K: Key, V: Value> Storage<K, V> {
     }
 
     /// Create block to aggregate updates
-    pub fn block(&self, rollback_latest_block: bool) -> Block<'_, K, V> {
-        let mut rollback = self.rollback.write();
+    pub fn block(&self) -> Block<'_, K, V> {
+        let mut revert = self.revert.write();
+        let blocks = self.blocks.write();
+
+        // Clear revert
+        revert.get_mut().clear();
+
+        Block { revert, blocks }
+    }
+
+    /// Create block to aggregate updates and revert changes created in the latest block
+    pub fn block_and_revert(&self) -> Block<'_, K, V> {
+        let mut revert = self.revert.write();
         let mut blocks = self.blocks.write();
 
         {
-            let rollback = core::mem::take(rollback.get_mut());
-            // Revert changes in case of rollback
-            if rollback_latest_block {
-                for (key, value) in rollback {
-                    match value {
-                        None => blocks.remove(&key),
-                        Some(value) => blocks.insert(key, value),
-                    };
-                }
+            let revert = core::mem::take(revert.get_mut());
+            for (key, value) in revert {
+                match value {
+                    None => blocks.remove(&key),
+                    Some(value) => blocks.insert(key, value),
+                };
             }
         }
 
-        Block { rollback, blocks }
+        Block { revert, blocks }
     }
 }
 
@@ -60,7 +70,7 @@ impl<K: Key, V: Value> Default for Storage<K, V> {
 impl<K: Key, V: Value> FromIterator<(K, V)> for Storage<K, V> {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         Self {
-            rollback: EbrCell::new(BTreeMap::new()),
+            revert: EbrCell::new(BTreeMap::new()),
             blocks: iter.into_iter().collect(),
         }
     }
@@ -133,7 +143,7 @@ mod block {
 
     /// Batched update to the storage that can be reverted later
     pub struct Block<'store, K: Key, V: Value> {
-        pub(crate) rollback: EbrCellWriteTxn<'store, BTreeMap<K, Option<V>>>,
+        pub(crate) revert: EbrCellWriteTxn<'store, BTreeMap<K, Option<V>>>,
         pub(crate) blocks: BptreeMapWriteTxn<'store, K, V>,
     }
 
@@ -145,7 +155,7 @@ mod block {
         {
             Transaction {
                 block: self,
-                rollback: BTreeMap::new(),
+                revert: BTreeMap::new(),
             }
         }
 
@@ -153,13 +163,13 @@ mod block {
         pub fn commit(self) {
             // Commit fields in the inverse order
             self.blocks.commit();
-            self.rollback.commit();
+            self.revert.commit();
         }
 
         /// Get mutable access to the value stored in
         pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
             self.blocks.get_mut(key).map(|value| {
-                self.rollback
+                self.revert
                     .entry(key.clone())
                     .or_insert_with(|| Some(value.clone()));
                 value
@@ -169,18 +179,14 @@ mod block {
         /// Insert key value into the storage
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             let prev_value = self.blocks.insert(key.clone(), value);
-            self.rollback
-                .entry(key)
-                .or_insert_with(|| prev_value.clone());
+            self.revert.entry(key).or_insert_with(|| prev_value.clone());
             prev_value
         }
 
         /// Remove key value from storage
         pub fn remove(&mut self, key: K) -> Option<V> {
             let prev_value = self.blocks.remove(&key);
-            self.rollback
-                .entry(key)
-                .or_insert_with(|| prev_value.clone());
+            self.revert.entry(key).or_insert_with(|| prev_value.clone());
             prev_value
         }
     }
@@ -217,22 +223,22 @@ mod block {
 
     /// Part of block's aggregated changes which applied or aborted at the same time
     pub struct Transaction<'block, 'store, K: Key, V: Value> {
-        pub(crate) rollback: BTreeMap<K, Option<V>>,
+        pub(crate) revert: BTreeMap<K, Option<V>>,
         pub(crate) block: &'block mut Block<'store, K, V>,
     }
 
     impl<'block, 'store: 'block, K: Key, V: Value> Transaction<'block, 'store, K, V> {
         /// Apply aggregated changes of [`Transaction`] to the [`Block`]
         pub fn apply(mut self) {
-            for (key, value) in core::mem::take(&mut self.rollback) {
-                self.block.rollback.entry(key).or_insert(value);
+            for (key, value) in core::mem::take(&mut self.revert) {
+                self.block.revert.entry(key).or_insert(value);
             }
         }
 
         /// Get mutable access to the value stored in
         pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
             self.block.blocks.get_mut(key).map(|value| {
-                self.rollback
+                self.revert
                     .entry(key.clone())
                     .or_insert_with(|| Some(value.clone()));
                 value
@@ -242,18 +248,14 @@ mod block {
         /// Insert key value into the transaction temporary map
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             let prev_value = self.block.blocks.insert(key.clone(), value);
-            self.rollback
-                .entry(key)
-                .or_insert_with(|| prev_value.clone());
+            self.revert.entry(key).or_insert_with(|| prev_value.clone());
             prev_value
         }
 
         /// Remove key value from storage
         pub fn remove(&mut self, key: K) -> Option<V> {
             let prev_value = self.block.blocks.remove(&key);
-            self.rollback
-                .entry(key)
-                .or_insert_with(|| prev_value.clone());
+            self.revert.entry(key).or_insert_with(|| prev_value.clone());
             prev_value
         }
     }
@@ -286,9 +288,9 @@ mod block {
 
     impl<'block, 'store: 'block, K: Key, V: Value> Drop for Transaction<'block, 'store, K, V> {
         fn drop(&mut self) {
-            // revert changes made so fur by current transaction
+            // revert changes made so far by current transaction
             // if transaction was applied set would be empty
-            for (key, value) in core::mem::take(&mut self.rollback) {
+            for (key, value) in core::mem::take(&mut self.revert) {
                 match value {
                     None => self.block.blocks.remove(&key),
                     Some(value) => self.block.blocks.insert(key, value),
@@ -347,7 +349,7 @@ mod tests {
         let view0 = storage.view();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 0), (1, 0), (2, 0)] {
                 block.insert(key, value);
             }
@@ -357,7 +359,7 @@ mod tests {
         let view1 = storage.view();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 1), (1, 1), (3, 1)] {
                 block.insert(key, value);
             }
@@ -367,7 +369,7 @@ mod tests {
         let view2 = storage.view();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(1, 2), (4, 2)] {
                 block.insert(key, value);
             }
@@ -403,7 +405,7 @@ mod tests {
     fn transaction_step() {
         let storage = Storage::<u64, u64>::new();
 
-        let mut block = storage.block(false);
+        let mut block = storage.block();
 
         // Successful transaction
         {
@@ -441,7 +443,7 @@ mod tests {
         let storage = Storage::<u64, u64>::new();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 0), (1, 0), (2, 0)] {
                 block.insert(key, value);
             }
@@ -449,7 +451,7 @@ mod tests {
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 1), (1, 1), (3, 1)] {
                 block.insert(key, value);
             }
@@ -457,7 +459,7 @@ mod tests {
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(1, 2), (4, 2)] {
                 block.insert(key, value);
             }
@@ -473,7 +475,7 @@ mod tests {
             assert_eq!(kv_actual, kv_expected);
         }
 
-        let mut block = storage.block(false);
+        let mut block = storage.block();
         block.insert(0, 3);
         block.insert(5, 3);
 
@@ -499,7 +501,7 @@ mod tests {
         let storage = Storage::<u64, u64>::new();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 0), (1, 0), (2, 0)] {
                 block.insert(key, value);
             }
@@ -507,7 +509,7 @@ mod tests {
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 1), (1, 1), (3, 1)] {
                 block.insert(key, value);
             }
@@ -515,7 +517,7 @@ mod tests {
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(1, 2), (4, 2)] {
                 block.insert(key, value);
             }
@@ -545,7 +547,7 @@ mod tests {
             assert_eq!(kv_actual, kv_expected);
         }
 
-        let mut block = storage.block(false);
+        let mut block = storage.block();
         block.insert(0, 3);
         block.insert(5, 3);
 
@@ -584,17 +586,17 @@ mod tests {
     }
 
     #[test]
-    fn rollback() {
+    fn revert() {
         let storage = Storage::<u64, u64>::new();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             block.insert(0, 0);
             block.commit()
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             block.insert(0, 1);
             block.commit()
         }
@@ -602,7 +604,7 @@ mod tests {
         let view1 = storage.view();
 
         {
-            let block = storage.block(true);
+            let block = storage.block_and_revert();
             block.commit();
         }
         let view2 = storage.view();
@@ -618,7 +620,7 @@ mod tests {
         let storage = Storage::<u64, u64>::new();
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 0), (1, 0), (2, 0)] {
                 block.insert(key, value);
             }
@@ -626,7 +628,7 @@ mod tests {
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(0, 1), (1, 1), (3, 1)] {
                 block.insert(key, value);
             }
@@ -634,7 +636,7 @@ mod tests {
         }
 
         {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             for (key, value) in [(1, 2), (4, 2)] {
                 block.insert(key, value);
             }
@@ -653,7 +655,7 @@ mod tests {
             let mut keys = BTreeSet::new();
 
             for (committed, tx) in txs {
-                let mut block = storage.block(false);
+                let mut block = storage.block();
 
                 for (key, value) in tx {
                     keys.insert(key);

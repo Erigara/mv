@@ -26,7 +26,7 @@ fn fill_storage(transactions: u64) -> Storage<u64, u64> {
     let keys_per_transaction = KEYS_IN_STORE / transactions;
 
     for _ in 0..transactions {
-        let mut transaction = storage.block(false);
+        let mut transaction = storage.block();
         for _ in 0..keys_per_transaction {
             transaction.insert(c, c);
             c += 1;
@@ -181,7 +181,7 @@ fn iter_storage_concurrent(c: &mut Criterion) {
                     .collect::<Vec<_>>();
 
                 for v in 1..=10 {
-                    let mut block = storage.block(false);
+                    let mut block = storage.block();
                     for k in 0..KEYS_IN_STORE {
                         block.insert(k, v);
                     }

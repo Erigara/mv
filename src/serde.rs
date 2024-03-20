@@ -30,11 +30,11 @@ mod storage {
         where
             S: serde::Serializer,
         {
-            let rollback = self.rollback.read();
+            let revert = self.revert.read();
             let blocks = self.blocks.read();
 
             let mut state = serializer.serialize_struct("Storage", 2)?;
-            state.serialize_field("rollback", rollback.deref())?;
+            state.serialize_field("revert", revert.deref())?;
             state.serialize_field("blocks", &BlocksSerializeHelper(blocks))?;
             state.end()
         }
@@ -86,7 +86,7 @@ mod storage {
             D: serde::Deserializer<'de>,
         {
             enum Field {
-                Rollback,
+                Revert,
                 Blocks,
             }
 
@@ -101,7 +101,7 @@ mod storage {
                         type Value = Field;
 
                         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                            formatter.write_str("`rollback` or `blocks`")
+                            formatter.write_str("`revert` or `blocks`")
                         }
 
                         fn visit_str<E>(self, value: &str) -> Result<Field, E>
@@ -109,7 +109,7 @@ mod storage {
                             E: de::Error,
                         {
                             match value {
-                                "rollback" => Ok(Field::Rollback),
+                                "revert" => Ok(Field::Revert),
                                 "blocks" => Ok(Field::Blocks),
                                 _ => Err(de::Error::unknown_field(value, FIELDS)),
                             }
@@ -146,8 +146,8 @@ mod storage {
                 where
                     SA: SeqAccess<'de>,
                 {
-                    let rollback = seq
-                        .next_element_seed(RollbackDeserializeSeeded {
+                    let revert = seq
+                        .next_element_seed(RevertDeserializeSeeded {
                             kseed: self.kseed.clone(),
                             vseed: self.vseed.clone(),
                         })?
@@ -158,26 +158,25 @@ mod storage {
                             vseed: self.vseed.clone(),
                         })?
                         .ok_or_else(|| de::Error::invalid_length(1, &self))?;
-                    Ok(Storage { rollback, blocks })
+                    Ok(Storage { revert, blocks })
                 }
 
                 fn visit_map<MA>(self, mut map: MA) -> Result<Self::Value, MA::Error>
                 where
                     MA: MapAccess<'de>,
                 {
-                    let mut rollback = None;
+                    let mut revert = None;
                     let mut blocks = None;
                     while let Some(key) = map.next_key()? {
                         match key {
-                            Field::Rollback => {
-                                if rollback.is_some() {
-                                    return Err(de::Error::duplicate_field("rollback"));
+                            Field::Revert => {
+                                if revert.is_some() {
+                                    return Err(de::Error::duplicate_field("revert"));
                                 }
-                                rollback =
-                                    Some(map.next_value_seed(RollbackDeserializeSeeded {
-                                        kseed: self.kseed.clone(),
-                                        vseed: self.vseed.clone(),
-                                    })?);
+                                revert = Some(map.next_value_seed(RevertDeserializeSeeded {
+                                    kseed: self.kseed.clone(),
+                                    vseed: self.vseed.clone(),
+                                })?);
                             }
                             Field::Blocks => {
                                 if blocks.is_some() {
@@ -190,13 +189,13 @@ mod storage {
                             }
                         }
                     }
-                    let rollback = rollback.ok_or_else(|| de::Error::missing_field("rollback"))?;
+                    let revert = revert.ok_or_else(|| de::Error::missing_field("revert"))?;
                     let blocks = blocks.ok_or_else(|| de::Error::missing_field("blocks"))?;
-                    Ok(Storage { rollback, blocks })
+                    Ok(Storage { revert, blocks })
                 }
             }
 
-            const FIELDS: &[&str] = &["rollback", "blocks"];
+            const FIELDS: &[&str] = &["revert", "blocks"];
             deserializer.deserialize_struct(
                 "Storage",
                 FIELDS,
@@ -269,12 +268,12 @@ mod storage {
         }
     }
 
-    struct RollbackDeserializeSeeded<KS, VS> {
+    struct RevertDeserializeSeeded<KS, VS> {
         kseed: KS,
         vseed: VS,
     }
 
-    impl<'de, KS, VS> DeserializeSeed<'de> for RollbackDeserializeSeeded<KS, VS>
+    impl<'de, KS, VS> DeserializeSeed<'de> for RevertDeserializeSeeded<KS, VS>
     where
         KS: DeserializeSeed<'de> + Clone,
         VS: DeserializeSeed<'de> + Clone,
@@ -287,7 +286,7 @@ mod storage {
         where
             D: serde::Deserializer<'de>,
         {
-            struct RollbackSeededVisitor<KS, VS> {
+            struct RevertSeededVisitor<KS, VS> {
                 kseed: KS,
                 vseed: VS,
             }
@@ -298,7 +297,7 @@ mod storage {
                     V: Value,
                     KS: DeserializeSeed<'de, Value = K> + Clone,
                     VS: DeserializeSeed<'de, Value = V> + Clone,
-                > Visitor<'de> for RollbackSeededVisitor<KS, VS>
+                > Visitor<'de> for RevertSeededVisitor<KS, VS>
             where
                 KS: DeserializeSeed<'de> + Clone,
                 VS: DeserializeSeed<'de> + Clone,
@@ -329,7 +328,7 @@ mod storage {
                 }
             }
 
-            deserializer.deserialize_map(RollbackSeededVisitor {
+            deserializer.deserialize_map(RevertSeededVisitor {
                 kseed: self.kseed,
                 vseed: self.vseed,
             })
@@ -355,11 +354,11 @@ mod cell {
         where
             S: serde::Serializer,
         {
-            let rollback = self.rollback.read();
+            let revert = self.revert.read();
             let blocks = self.blocks.read();
 
             let mut state = serializer.serialize_struct("Storage", 2)?;
-            state.serialize_field("rollback", rollback.deref())?;
+            state.serialize_field("revert", revert.deref())?;
             state.serialize_field("blocks", blocks.deref())?;
             state.end()
         }
@@ -389,7 +388,7 @@ mod cell {
             D: serde::Deserializer<'de>,
         {
             enum Field {
-                Rollback,
+                Revert,
                 Blocks,
             }
 
@@ -404,7 +403,7 @@ mod cell {
                         type Value = Field;
 
                         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                            formatter.write_str("`rollback` or `blocks`")
+                            formatter.write_str("`revert` or `blocks`")
                         }
 
                         fn visit_str<E>(self, value: &str) -> Result<Field, E>
@@ -412,7 +411,7 @@ mod cell {
                             E: de::Error,
                         {
                             match value {
-                                "rollback" => Ok(Field::Rollback),
+                                "revert" => Ok(Field::Revert),
                                 "blocks" => Ok(Field::Blocks),
                                 _ => Err(de::Error::unknown_field(value, FIELDS)),
                             }
@@ -445,7 +444,7 @@ mod cell {
                 where
                     SA: SeqAccess<'de>,
                 {
-                    let rollback = seq
+                    let revert = seq
                         .next_element_seed(OptionSeeded {
                             seed: self.seed.clone(),
                         })?
@@ -454,7 +453,7 @@ mod cell {
                         .next_element_seed(self.seed.clone())?
                         .ok_or_else(|| de::Error::invalid_length(1, &self))?;
                     Ok(Cell {
-                        rollback: EbrCell::new(rollback),
+                        revert: EbrCell::new(revert),
                         blocks: EbrCell::new(blocks),
                     })
                 }
@@ -463,15 +462,15 @@ mod cell {
                 where
                     MA: MapAccess<'de>,
                 {
-                    let mut rollback = None;
+                    let mut revert = None;
                     let mut blocks = None;
                     while let Some(key) = map.next_key()? {
                         match key {
-                            Field::Rollback => {
-                                if rollback.is_some() {
-                                    return Err(de::Error::duplicate_field("rollback"));
+                            Field::Revert => {
+                                if revert.is_some() {
+                                    return Err(de::Error::duplicate_field("revert"));
                                 }
-                                rollback = Some(map.next_value_seed(OptionSeeded {
+                                revert = Some(map.next_value_seed(OptionSeeded {
                                     seed: self.seed.clone(),
                                 })?);
                             }
@@ -483,16 +482,16 @@ mod cell {
                             }
                         }
                     }
-                    let rollback = rollback.ok_or_else(|| de::Error::missing_field("rollback"))?;
+                    let revert = revert.ok_or_else(|| de::Error::missing_field("revert"))?;
                     let blocks = blocks.ok_or_else(|| de::Error::missing_field("blocks"))?;
                     Ok(Cell {
-                        rollback: EbrCell::new(rollback),
+                        revert: EbrCell::new(revert),
                         blocks: EbrCell::new(blocks),
                     })
                 }
             }
 
-            const FIELDS: &[&str] = &["rollback", "blocks"];
+            const FIELDS: &[&str] = &["revert", "blocks"];
             deserializer.deserialize_struct("Cell", FIELDS, CellSeededVisitor { seed: self.seed })
         }
     }
@@ -547,14 +546,17 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{cell::Cell, storage::Storage};
+    use crate::{
+        cell::Cell,
+        storage::{Storage, StorageReadOnly},
+    };
 
     #[test]
     fn serialize_deserialize_storage() {
         let storage = Storage::<u64, u64>::new();
 
         for i in 0..100 {
-            let mut block = storage.block(false);
+            let mut block = storage.block();
             block.insert(i, i);
             block.commit();
         }
@@ -576,7 +578,7 @@ mod tests {
         let cell = Cell::new(0_u64);
 
         {
-            let mut block = cell.block(false);
+            let mut block = cell.block();
             *block.get_mut() = 1;
             block.commit();
         }
@@ -590,7 +592,7 @@ mod tests {
         assert_eq!(view.get(), &1);
 
         {
-            let block = cell.block(true);
+            let block = cell.block_and_revert();
             block.commit();
         }
 
