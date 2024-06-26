@@ -18,7 +18,8 @@ name = "read_write"
 harness = false
 
 [dependencies]
-concread = { version = "0.5.0", features = ["ebr", "maps"]}
+# TODO: return upstream repo when fix is merged
+concread = { git = "https://github.com/Erigara/concread.git", rev = "bd80db2e85ed179f41aeabc6629e4eb3ec987ed9", features = ["ebr", "maps"]}
 serde = { version = "~1.0", optional = true, features = ["derive"] }
 
 [dev-dependencies]
