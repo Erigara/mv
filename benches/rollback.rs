@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use storage::storage::Storage;
+use mv::storage::Storage;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
